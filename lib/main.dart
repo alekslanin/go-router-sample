@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:go_router_demo/isolate_sample.dart';
+import 'dart:async';
+import 'dart:convert';
+import 'package:http/http.dart' as http; 
 
 final GlobalKey<NavigatorState> _rootNavigatorKey = GlobalKey<NavigatorState>(
   debugLabel: 'root',
@@ -112,7 +116,7 @@ class ShellRouteExampleApp extends StatelessWidget {
                 path: 'details',
                 parentNavigatorKey: _rootNavigatorKey,
                 builder: (BuildContext context, GoRouterState state) {
-                  return const DetailsScreen(label: 'C');
+                  return MyHomePage(title: "isolate sample");
                 },
               ),
             ],
@@ -134,7 +138,7 @@ class ShellRouteExampleApp extends StatelessWidget {
                 path: 'details',
                 parentNavigatorKey: _rootNavigatorKey,
                 builder: (BuildContext context, GoRouterState state) {
-                  return const DetailsScreen(label: 'D');
+                  return AutoApiCallScreen();
                 },
               ),
             ],
@@ -423,6 +427,114 @@ class ErrorScreen extends StatelessWidget {
           style: Theme.of(context).textTheme.headlineMedium,
         ),
       ),
+    );
+  }
+}
+
+class AutoApiCallScreen extends StatefulWidget {
+  const AutoApiCallScreen({super.key});
+
+  @override
+  _AutoApiCallScreenState createState() => _AutoApiCallScreenState();
+}
+
+class _AutoApiCallScreenState extends State<AutoApiCallScreen> {
+  late Timer timer;
+  String apiResponseStatus = "Waiting for api call";
+
+  @override
+  void initState() {
+    super.initState();
+    // Start the timer to call the API every 1 minute (60 seconds)
+    timer = Timer.periodic(
+      const Duration(seconds: 15),
+      (Timer t) => _callApiPeriodically(),
+    );
+  }
+
+  @override
+  void dispose() {
+    // Cancel the timer when the widget is disposed
+    print('timer disposal called here');
+    timer.cancel();
+    super.dispose();
+  }
+
+  Future<void> _callApiPeriodically() async {
+    //final url = Uri.parse('https://zenquotes.io/api/random'); 
+    try {
+      final response = await http.get(Uri.parse('https://zenquotes.io/api/random'));
+      if (response.statusCode == 200) {
+        setState(() {
+          List<Quote> list = parse(response.body);
+          apiResponseStatus = list[0].title;
+        });
+        // Further data processing can be done here (e.g., json decode, update state)
+      } else {
+        setState(() {
+          apiResponseStatus = "Failed: Status ${response.statusCode} at ${DateTime.now().toString()}";
+        });
+      }
+    } catch (e) {
+      setState(() {
+        apiResponseStatus = "Error: $e at ${DateTime.now().toString()}";
+      });
+    }
+  }
+
+  // A function that converts a response body into a List<Photo>.
+  List<Quote> parse(String responseBody) {
+    final parsed = (jsonDecode(responseBody) as List<Object?>)
+        .cast<Map<String, Object?>>();
+
+    return parsed.map<Quote>(Quote.fromJson).toList();
+  }
+
+  Future<List<Quote>> fetch(http.Client client) async {
+    final response = await client.get(
+      Uri.parse('https://zenquotes.io/api/random') 
+    );
+
+    // Synchronously run parsePhotos in the main isolate.
+    return parse(response.body);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text("Periodic API Call")),
+      body: Center(
+        child: Text(apiResponseStatus),
+      ),
+    );
+  }
+}
+
+/*
+[
+  {
+    "q": "No one returns from a long journey the same person they were before.",
+    "a": "Zen Proverb",
+    "h": "\u003Cblockquote\u003E&ldquo;No one returns from a long journey the same person they were before.&rdquo; &mdash; \u003Cfooter\u003EZen Proverb\u003C/footer\u003E\u003C/blockquote\u003E"
+  }
+]
+*/
+class Quote {
+  final String title;
+  final String a;
+  final String html;
+
+  const Quote({
+    required this.title,
+    required this.a,
+    required this.html,
+  });
+
+  factory Quote.fromJson(Map<String, dynamic> json) {
+    return Quote(
+      title: json['q'] as String,
+      a: json['a'] as String,
+      html: json['h'] as String,
     );
   }
 }
